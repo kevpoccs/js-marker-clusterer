@@ -48,7 +48,7 @@ index.html
         google.maps.event.addDomListener(window, 'load', initialize);
     </script>
     ...
-    
+
 
 ## Live Demos
 
@@ -75,3 +75,43 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
+
+## Update 09-28-2016
+
+add the possibility to add a custom count to all marker, and set the sum text when clustering them.
+
+index.html
+
+    ...
+
+    <div id="map-container"><div id="map"></div></div>
+    <script src="markerclusterer.js"></script>
+    <script>
+        function initialize() {
+            var center = new google.maps.LatLng(51.5074, 0.1278);
+
+            var map = new google.maps.Map(document.getElementById('map'), {
+              zoom: 3,
+              center: center,
+              mapTypeId: google.maps.MapTypeId.ROADMAP
+            });
+
+            var markers = [];
+            var marker = new google.maps.Marker({
+                position: new google.maps.LatLng(51.5074, 0.1278),
+                counter: 10 // set a key-value for counter what you want
+            });
+            markers.push(marker);
+
+            var options = {
+                imagePath: 'images/m'
+            };
+
+            var markerCluster = new MarkerClusterer(map, markers, {
+                customCount: 'counter', // pass the key to the cluster maker
+              });
+        }
+
+        google.maps.event.addDomListener(window, 'load', initialize);
+    </script>
+    ...

@@ -1,12 +1,12 @@
 // ==ClosureCompiler==
 // @compilation_level ADVANCED_OPTIMIZATIONS
-// @externs_url https://raw.githubusercontent.com/google/closure-compiler/master/contrib/externs/maps/google_maps_api_v3.js
+// @externs_url http://closure-compiler.googlecode.com/svn/trunk/contrib/externs/maps/google_maps_api_v3_3.js
 // ==/ClosureCompiler==
 
 /**
  * @name MarkerClusterer for Google Maps v3
  * @version version 1.0
- * @author Luke Mahe
+ * @author Kevin Poccard updated from Luke Mahe's version
  * @fileoverview
  * The library creates and manages per-zoom-level clusters for large amounts of
  * markers.
@@ -17,9 +17,6 @@
  */
 
 /**
- * @license
- * Copyright 2010 Google Inc. All Rights Reserved.
- *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
@@ -46,7 +43,7 @@
  *                cluster.
  *     'zoomOnClick': (boolean) Whether the default behaviour of clicking on a
  *                    cluster is to zoom into it.
- *     'averageCenter': (boolean) Whether the center of each cluster should be
+ *     'averageCenter': (boolean) Wether the center of each cluster should be
  *                      the average of all markers in the cluster.
  *     'minimumClusterSize': (number) The minimum number of markers to be in a
  *                           cluster before the markers are hidden and a count
@@ -132,6 +129,8 @@ function MarkerClusterer(map, opt_markers, opt_options) {
   this.imageExtension_ = options['imageExtension'] ||
       this.MARKER_CLUSTER_IMAGE_EXTENSION_;
 
+  this.customCount = options['customCount'] || null;
+
   /**
    * @type {boolean}
    * @private
@@ -190,7 +189,9 @@ function MarkerClusterer(map, opt_markers, opt_options) {
  * @type {string}
  * @private
  */
-MarkerClusterer.prototype.MARKER_CLUSTER_IMAGE_PATH_ = '../images/m';
+MarkerClusterer.prototype.MARKER_CLUSTER_IMAGE_PATH_ =
+    'http://google-maps-utility-library-v3.googlecode.com/svn/trunk/markerclusterer/' +
+    'images/m';
 
 
 /**
@@ -354,9 +355,17 @@ MarkerClusterer.prototype.getMaxZoom = function() {
  *  @return {Object} A object properties: 'text' (string) and 'index' (number).
  *  @private
  */
-MarkerClusterer.prototype.calculator_ = function(markers, numStyles) {
+MarkerClusterer.prototype.calculator_ = function(markers, numStyles, customCount) {
   var index = 0;
   var count = markers.length;
+  var customCountValue = 0;
+
+  if (customCount != null) {
+    markers.forEach(function(itm) {
+      customCountValue = customCountValue + parseInt(itm[customCount], 10);
+    });
+  }
+
   var dv = count;
   while (dv !== 0) {
     dv = parseInt(dv / 10, 10);
@@ -366,7 +375,8 @@ MarkerClusterer.prototype.calculator_ = function(markers, numStyles) {
   index = Math.min(index, numStyles);
   return {
     text: count,
-    index: index
+    index: index,
+    textCount: customCountValue,
   };
 };
 
@@ -594,6 +604,17 @@ MarkerClusterer.prototype.getMinClusterSize = function() {
 };
 
 /**
+ * Returns custom count parameter.
+ *
+ * @return {string} The custom count parameter.
+ */
+MarkerClusterer.prototype.getCustomCount = function() {
+  return this.customCount;
+};
+
+
+
+/**
  * Sets the min cluster size.
  *
  * @param {number} size The grid size.
@@ -806,6 +827,7 @@ function Cluster(markerClusterer) {
   this.gridSize_ = markerClusterer.getGridSize();
   this.minClusterSize_ = markerClusterer.getMinClusterSize();
   this.averageCenter_ = markerClusterer.isAverageCenter();
+  this.customCount = markerClusterer.getCustomCount();
   this.center_ = null;
   this.markers_ = [];
   this.bounds_ = null;
@@ -861,6 +883,7 @@ Cluster.prototype.addMarker = function(marker) {
   this.markers_.push(marker);
 
   var len = this.markers_.length;
+
   if (len < this.minClusterSize_ && marker.getMap() != this.map_) {
     // Min cluster size not reached so show the marker.
     marker.setMap(this.map_);
@@ -1001,9 +1024,10 @@ Cluster.prototype.updateIcon = function() {
   }
 
   var numStyles = this.markerClusterer_.getStyles().length;
-  var sums = this.markerClusterer_.getCalculator()(this.markers_, numStyles);
+  var customCountParam = this.markerClusterer_.getCustomCount();
+  var sums = this.markerClusterer_.getCalculator()(this.markers_, numStyles, customCountParam);
   this.clusterIcon_.setCenter(this.center_);
-  this.clusterIcon_.setSums(sums);
+  this.clusterIcon_.setSums(sums, customCountParam);
   this.clusterIcon_.show();
 };
 
@@ -1043,14 +1067,12 @@ function ClusterIcon(cluster, styles, opt_padding) {
 
 /**
  * Triggers the clusterclick event and zoom's if the option is set.
- *
- * @param {google.maps.MouseEvent} event The event to propagate
  */
-ClusterIcon.prototype.triggerClusterClick = function(event) {
+ClusterIcon.prototype.triggerClusterClick = function() {
   var markerClusterer = this.cluster_.getMarkerClusterer();
 
   // Trigger the clusterclick event.
-  google.maps.event.trigger(markerClusterer, 'clusterclick', this.cluster_, event);
+  google.maps.event.trigger(markerClusterer, 'clusterclick', this.cluster_);
 
   if (markerClusterer.isZoomOnClick()) {
     // Zoom into the cluster.
@@ -1068,25 +1090,15 @@ ClusterIcon.prototype.onAdd = function() {
   if (this.visible_) {
     var pos = this.getPosFromLatLng_(this.center_);
     this.div_.style.cssText = this.createCss(pos);
-    this.div_.innerHTML = this.sums_.text;
+    this.div_.innerHTML = (!this.sums_.textCount) ? this.sums_.text : this.sums_.textCount;
   }
 
   var panes = this.getPanes();
   panes.overlayMouseTarget.appendChild(this.div_);
 
   var that = this;
-  var isDragging = false;
-  google.maps.event.addDomListener(this.div_, 'click', function(event) {
-    // Only perform click when not preceded by a drag
-    if (!isDragging) {
-      that.triggerClusterClick(event);
-    }
-  });
-  google.maps.event.addDomListener(this.div_, 'mousedown', function() {
-    isDragging = false;
-  });
-  google.maps.event.addDomListener(this.div_, 'mousemove', function() {
-    isDragging = true;
+  google.maps.event.addDomListener(this.div_, 'click', function() {
+    that.triggerClusterClick();
   });
 };
 
@@ -1177,12 +1189,12 @@ ClusterIcon.prototype.onRemove = function() {
  *   'text': (string) The text to display in the icon.
  *   'index': (number) The style index of the icon.
  */
-ClusterIcon.prototype.setSums = function(sums) {
+ClusterIcon.prototype.setSums = function(sums, customCountParam) {
   this.sums_ = sums;
-  this.text_ = sums.text;
+  this.text_ = (!sums.textCount) ? sums.text : sums.textCount;
   this.index_ = sums.index;
   if (this.div_) {
-    this.div_.innerHTML = sums.text;
+    this.div_.innerHTML = (!sums.textCount) ? sums.text : sums.textCount;
   }
 
   this.useStyle();
